@@ -46,24 +46,24 @@ jobs:
           echo "Đổi Package Name thành com.google.android.youtube.tv để nhận nút Remote & Giọng nói..."
           sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
 
-      - name: 7. Thay thế Icon và Banner TV mới nét căng (Quét sạch thư mục có đuôi -v4)
+     - name: 7. Thay thế Icon và Banner TV mới nét căng (Bất chấp đuôi file)
         run: |
           echo "1. Xóa các file XML Icon thích ứng (Adaptive Icon)..."
           find decompiled_app/res/ -type f -name "*launcher*.xml" -delete 2>/dev/null || true
           find decompiled_app/res/ -type f -name "*icon*.xml" -delete 2>/dev/null || true
           
-          echo "2. Lùng sục đè Icon vào TẤT CẢ thư mục mipmap và drawable (Kể cả đuôi -v4, -v17)..."
-          find decompiled_app/res/ -type f \( -iname "*launcher*.png" -o -iname "*launcher*.webp" \) -exec cp mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f \( -iname "*icon*.png" -o -iname "*icon*.webp" \) -exec cp mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f \( -iname "*app*.png" -o -iname "*app*.webp" \) -exec cp mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f \( -iname "*logo*.png" -o -iname "*logo*.webp" \) -exec cp mod-assets/icon.png {} \;
+          echo "2. Lùng sục và đè Icon mới vào TẤT CẢ các file icon (BẤT CHẤP ĐUÔI FILE)..."
+          find decompiled_app/res/ -type f -iname "*launcher*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
+          find decompiled_app/res/ -type f -iname "*ic_app*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
+          find decompiled_app/res/ -type f -iname "*ic_icon*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
+          find decompiled_app/res/ -type f -iname "*logo*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
           
-          echo "3. Lùng sục và đè Banner TV vào tất cả thư mục drawable..."
-          find decompiled_app/res/ -type f \( -iname "*banner*.png" -o -iname "*banner*.webp" \) -exec cp mod-assets/banner.png {} \;
-          find decompiled_app/res/ -type f \( -iname "*tv*.png" -o -iname "*tv*.webp" \) -exec cp mod-assets/banner.png {} \;
+          echo "3. Lùng sục và đè Banner TV mới (BẤT CHẤP ĐUÔI FILE)..."
+          find decompiled_app/res/ -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
+          find decompiled_app/res/ -type f -iname "*tv_banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
           
-          echo "4. Kiểm tra xem đã đè thành công chưa..."
-          ls -la mod-assets/
+          echo "4. Check thử ngày giờ sửa đổi của file ic_app để kiểm chứng..."
+          find decompiled_app/res/ -type f -iname "*ic_app*" -exec ls -la {} \;
 
       - name: 8. Đóng gói lại thành APK mới
         run: |
