@@ -27,7 +27,7 @@ jobs:
         run: |
           wget -L -O cobalt.apk "https://github.com/reisxd/TizenTubeCobalt/releases/latest/download/cobalt-${{ matrix.arch }}.apk"
           
-          # Lấy version từ file gốc để đặt tên file
+          # Lấy version chính xác từ file gốc
           AAPT_PATH=$(find $ANDROID_HOME -name aapt | head -n 1)
           VERSION_NAME=$($AAPT_PATH dump badging cobalt.apk | grep versionName | cut -d"'" -f2)
           echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
@@ -35,23 +35,17 @@ jobs:
           wget -L -O apktool.jar "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
           java -jar apktool.jar d cobalt.apk -o decompiled_app
           
-          # Đổi Package Name và Tên App
           sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
           sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
-          
-          # Đổi tên trong các file XML
           find decompiled_app/res/ -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/gi' {} \;
           
-          # Dọn dẹp
           find decompiled_app/res/values/ -name "public.xml" -delete
           rm -rf decompiled_app/res/values-v*
           
-          # Thay thế Icon và Banner
           find decompiled_app/res/ -type f -iname "*launcher*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
           find decompiled_app/res/ -type f -iname "*ic_app*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
           find decompiled_app/res/ -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
           
-          # Đóng gói và Ký APK (Tên file có kèm version)
           java -jar apktool.jar b decompiled_app -o unsigned.apk --force-all
           echo "${{ secrets.SIGNING_KEY }}" | base64 -d > mykeystore.jks
           ZIPALIGN_PATH=$(find $ANDROID_HOME -name zipalign | head -n 1)
@@ -77,7 +71,7 @@ jobs:
           tag_name: "v${{ github.run_number }}"
           name: "YouTube TV Mod (Full Pack v${{ github.run_number }})"
           files: |
-            YouTube-TV-arm/*.apk
-            YouTube-TV-arm64/*.apk
+            YouTube-TV-arm/YouTube-TV-arm-*.apk
+            YouTube-TV-arm64/YouTube-TV-arm64-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
