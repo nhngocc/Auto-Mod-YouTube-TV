@@ -29,18 +29,24 @@ jobs:
       - name: 5. Bung APK
         run: java -jar apktool.jar d cobalt-arm.apk -o decompiled_app
 
-      - name: 6. Đổi Tên App triệt để (Bỏ qua cấu hình cũ)
+      - name: 6. Đổi Tên Gói và Tên App (Phương pháp ép xung Apktool)
         run: |
-          # Đổi Package Name trong Manifest
+          # 1. Ép Apktool rebuild lại toàn bộ bằng cách xóa file public.xml
+          # Điều này buộc nó phải tạo lại bảng tham chiếu khớp với package mới
+          find decompiled_app/res/values/ -name "public.xml" -delete
+          
+          # 2. Đổi Package Name trong AndroidManifest.xml
           sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
           
-          # Dùng tính năng của Apktool để đổi tên gói và tên nhãn khi build
-          # Thêm tham số --rename-manifest-package để ép đổi tên gói
-          # Xóa các thư mục res/values-v* (thường chứa các tên hardcode cũ)
-          find decompiled_app/res/ -name "values-v*" -exec rm -rf {} +
-          
-          # Đổi tên trong Manifest
+          # 3. Đổi tên App trong Manifest
           sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
+          
+          # 4. Tìm và thay thế chữ "TizenTube" trong tất cả file XML (tên hiển thị)
+          find decompiled_app/res/ -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/gi' {} \;
+          
+          # 5. XÓA BỎ CÁC THƯ MỤC VALUES BỊ LỖI (Đây là chìa khóa để không bị "no definition")
+          # Các thư mục này thường chứa các tên cũ cứng đầu gây lỗi
+          rm -rf decompiled_app/res/values-v*
 
       - name: 7. Thay thế Icon và Banner
         run: |
