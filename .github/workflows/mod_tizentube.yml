@@ -1,0 +1,74 @@
+name: Auto Mod TizenTubeCobalt (TV Box 32-bit)
+on:
+  schedule:
+    - cron: '0 0 * * *' # Tự động chạy check bản mới lúc 12h đêm
+  workflow_dispatch: # Tạo nút bấm chạy thủ công
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Lấy nguyên liệu từ Repo của m
+        uses: actions/checkout@v4
+
+      - name: 2. Cài đặt môi trường Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
+      - name: 3. Tải TizenTubeCobalt (Bản cobalt-arm.apk 32-bit mới nhất)
+        run: |
+          echo "Đang săn link tải bản 32-bit mới nhất..."
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest | jq -r '.assets[] | select(.name == "cobalt-arm.apk") | .browser_download_url')
+          
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" == "null" ]; then
+            echo "Lỗi: Không tìm thấy link tải!" && exit 1
+          fi
+          echo "Đã tìm thấy link: $DOWNLOAD_URL"
+          wget -q "$DOWNLOAD_URL" -O original.apk
+
+      - name: 4. Tải công cụ APKTool
+        run: |
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar -O apktool.jar
+
+      - name: 5. Bung tài nguyên APK (Bỏ qua giải mã code cho siêu nhanh)
+        run: |
+          java -jar apktool.jar d original.apk -r -o decompiled_app
+
+      - name: 6. Đổi Tên App thành YouTube Pro (Tùy chọn)
+        run: |
+          if [ -f decompiled_app/res/values/strings.xml ]; then
+            sed -i 's/>TizenTube Cobalt</>YouTube Pro</g' decompiled_app/res/values/strings.xml
+            sed -i 's/>Cobalt</>YouTube Pro</g' decompiled_app/res/values/strings.xml
+          fi
+
+      - name: 7. Thay thế Icon và Banner TV mới nét căng
+        run: |
+          # Càn quét toàn bộ thư mục res và đè icon/banner mới vào
+          find decompiled_app/res/ -name "ic_launcher*.png" -exec cp mod-assets/icon.png {} \;
+          find decompiled_app/res/ -name "ic_app*.png" -exec cp mod-assets/icon.png {} \;
+          find decompiled_app/res/ -name "*banner*.png" -exec cp mod-assets/banner.png {} \;
+
+      - name: 8. Đóng gói lại thành APK mới
+        run: |
+          java -jar apktool.jar b decompiled_app -o unsigned.apk
+
+      - name: 9. Ký chữ ký số bảo mật (Sign APK)
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: .
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        id: sign_app
+
+      - name: 10. Xuất xưởng file APK đã Mod lên mục Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.run_number }}-mod"
+          name: "YouTube Pro TV (Modded TizenTube)"
+          files: ${{ steps.sign_app.outputs.signedReleaseFile }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
