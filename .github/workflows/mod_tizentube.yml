@@ -1,4 +1,4 @@
-name: Auto Mod TizenTubeCobalt (TV Box 32-bit)
+name: Auto Mod TizenTube Cobalt
 
 on:
   workflow_dispatch:
@@ -7,92 +7,108 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm
+            source: cobalt-arm.apk
+            output: YouTube-TV-arm.apk
+
+          - abi: arm64
+            source: cobalt-arm64.apk
+            output: YouTube-TV-arm64.apk
+
     steps:
-      - name: 1. Lấy nguyên liệu
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt môi trường
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
-      - name: 2.1 Cài đặt Android SDK Build Tools
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 3. Tải APK
-        run: wget -L -O cobalt-arm.apk "https://github.com/reisxd/TizenTubeCobalt/releases/latest/download/cobalt-arm.apk"
-
-      - name: 4. Tải APKTool
-        run: wget -L -O apktool.jar "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
-
-      - name: 5. Bung APK
-        run: java -jar apktool.jar d cobalt-arm.apk -o decompiled_app
-      
-      - name: 5.1 Debug App Name
+      - name: Download Source APK
         run: |
-          echo "========== AndroidManifest =========="
-          grep "android:label" decompiled_app/AndroidManifest.xml || true
+          wget -L -O source.apk \
+          https://github.com/reisxd/TizenTubeCobalt/releases/latest/download/${{ matrix.source }}
 
-          echo ""
-          echo "========== Search TizenTube =========="
-          grep -R "TizenTube" decompiled_app || true
-
-          echo ""
-          echo "========== Search Native (.so) =========="
-          find decompiled_app/lib -name "*.so" -exec strings {} \; | grep -i "Tizen" || true
-
-          echo ""
-          echo "========== values =========="
-          find decompiled_app/res -type f
-
-      - name: 6. Đổi Package và App
+      - name: Download Apktool
         run: |
-            # Đổi Package Name
-            sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
-        
-            # Đổi Label trong Manifest
-            sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
-        
-            # Đổi mọi chuỗi TizenTube trong XML
-            find decompiled_app/res -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/g' {} \;
-        
-            # Đổi mọi chuỗi TizenTube trong các file text
-            grep -RIl "TizenTube" decompiled_app | while read f; do
-              sed -i 's/TizenTube/YouTube/g' "$f" || true
-            done
+          wget -L -O apktool.jar \
+          https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
 
-      - name: 7. Thay thế Icon và Banner
+      - name: Decode APK
         run: |
-          find decompiled_app/res/ -type f -iname "*launcher*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f -iname "*ic_app*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
+          java -jar apktool.jar d source.apk -o decompiled_app
 
-      - name: 8. Đóng gói lại
-        run: java -jar apktool.jar b decompiled_app -o unsigned.apk
-
-      - name: 9. Canh lề và Ký chữ ký số chính chủ Google
+      - name: Modify Package & Name
         run: |
-          echo "Giải mã Keystore..."
-          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > mykeystore.jks
-          
-          # Tìm đường dẫn tuyệt đối của zipalign và apksigner trong Android SDK
-          ZIPALIGN_PATH=$(find $ANDROID_HOME -name zipalign | head -n 1)
-          APKSIGNER_PATH=$(find $ANDROID_HOME -name apksigner | head -n 1)
-          
-          echo "Đang canh lề chuẩn 4-byte..."
-          $ZIPALIGN_PATH -p -f -v 4 unsigned.apk aligned.apk
-          
-          echo "Đang ký mã bảo mật..."
-          $APKSIGNER_PATH sign --ks mykeystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass "pass:${{ secrets.KEY_STORE_PASSWORD }}" --key-pass "pass:${{ secrets.KEY_PASSWORD }}" --out YouTube-Pro-TV-mod.apk aligned.apk
-          
-          rm -f mykeystore.jks unsigned.apk aligned.apk
+          sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
 
-      - name: 10. Xuất xưởng
-        uses: softprops/action-gh-release@v2
+          sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
+
+          find decompiled_app -type f -name "*.xml" \
+            -exec sed -i 's/TizenTube/YouTube/g' {} \; || true
+
+          grep -RIl "TizenTube" decompiled_app | while read f; do
+            sed -i 's/TizenTube/YouTube/g' "$f" || true
+          done
+
+      - name: Replace Icons & Banner
+        run: |
+          find decompiled_app/res -type f -iname "*launcher*" ! -name "*.xml" \
+            -exec cp -f mod-assets/icon.png {} \;
+
+          find decompiled_app/res -type f -iname "*ic_app*" ! -name "*.xml" \
+            -exec cp -f mod-assets/icon.png {} \;
+
+          find decompiled_app/res -type f -iname "*banner*" ! -name "*.xml" \
+            -exec cp -f mod-assets/banner.png {} \;
+
+      - name: Rebuild
+        run: |
+          java -jar apktool.jar b decompiled_app -o unsigned.apk --force-all
+
+      - name: Zipalign & Sign
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > keystore.jks
+
+          ZIPALIGN=$(find $ANDROID_HOME -name zipalign | head -n 1)
+          APKSIGNER=$(find $ANDROID_HOME -name apksigner | head -n 1)
+
+          $ZIPALIGN -p -f -v 4 unsigned.apk aligned.apk
+
+          $APKSIGNER sign \
+            --ks keystore.jks \
+            --ks-key-alias "${{ secrets.ALIAS }}" \
+            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --out "${{ matrix.output }}" \
+            aligned.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "v${{ github.run_number }}-mod"
-          name: "YouTube TV (Modded)"
-          files: YouTube-Pro-TV-mod.apk
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: YouTube TV Mod v${{ github.run_number }}
+          files: |
+            **/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
