@@ -62,7 +62,8 @@ jobs:
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
         id: sign_app
 
       - name: 10. Xuất xưởng file APK đã Mod lên mục Release
