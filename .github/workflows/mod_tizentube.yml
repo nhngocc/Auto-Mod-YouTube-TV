@@ -36,12 +36,15 @@ jobs:
         run: |
           java -jar apktool.jar d original.apk -r -o decompiled_app
 
-      - name: 6. Đổi Tên App thành YouTube Pro (Tùy chọn)
+      - name: 6. Đổi Tên App và Package Name thành YouTube chính chủ
         run: |
+          echo "Đổi tên hiển thị thành YouTube Pro..."
           if [ -f decompiled_app/res/values/strings.xml ]; then
             sed -i 's/>TizenTube Cobalt</>YouTube Pro</g' decompiled_app/res/values/strings.xml
             sed -i 's/>Cobalt</>YouTube Pro</g' decompiled_app/res/values/strings.xml
           fi
+          echo "Đổi Package Name thành com.google.android.youtube.tv để nhận nút Remote & Giọng nói..."
+          sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
 
       - name: 7. Thay thế Icon và Banner TV mới nét căng
         run: |
