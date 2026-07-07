@@ -22,9 +22,10 @@ jobs:
           echo "Đang tải bản cobalt-arm.apk mới nhất từ Repo tác giả..."
           wget -L -O cobalt-arm.apk "https://github.com/reisxd/TizenTubeCobalt/releases/latest/download/cobalt-arm.apk"
 
-      - name: 4. Tải công cụ APKTool
+      - name: 4. Tải công cụ APKTool chính chủ từ GitHub
         run: |
-          wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
+          echo "Đang tải APKTool v2.10.0 siêu tốc từ GitHub Releases..."
+          wget -L -O apktool.jar "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
 
       - name: 5. Bung tài nguyên APK (Bỏ qua giải mã code cho siêu nhanh)
         run: |
