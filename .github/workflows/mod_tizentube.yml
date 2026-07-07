@@ -54,11 +54,22 @@ jobs:
       - name: 8. Đóng gói lại
         run: java -jar apktool.jar b decompiled_app -o unsigned.apk
 
-      - name: 9. Ký chữ ký số
+      - name: 9. Canh lề và Ký chữ ký số chính chủ Google
         run: |
+          echo "Giải mã Keystore..."
           echo "${{ secrets.SIGNING_KEY }}" | base64 -d > mykeystore.jks
-          zipalign -p -f -v 4 unsigned.apk aligned.apk
-          apksigner sign --ks mykeystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass "pass:${{ secrets.KEY_STORE_PASSWORD }}" --key-pass "pass:${{ secrets.KEY_PASSWORD }}" --out YouTube-Pro-TV-mod.apk aligned.apk
+          
+          # Tìm đường dẫn tuyệt đối của zipalign và apksigner trong Android SDK
+          ZIPALIGN_PATH=$(find $ANDROID_HOME -name zipalign | head -n 1)
+          APKSIGNER_PATH=$(find $ANDROID_HOME -name apksigner | head -n 1)
+          
+          echo "Đang canh lề chuẩn 4-byte..."
+          $ZIPALIGN_PATH -p -f -v 4 unsigned.apk aligned.apk
+          
+          echo "Đang ký mã bảo mật..."
+          $APKSIGNER_PATH sign --ks mykeystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass "pass:${{ secrets.KEY_STORE_PASSWORD }}" --key-pass "pass:${{ secrets.KEY_PASSWORD }}" --out YouTube-Pro-TV-mod.apk aligned.apk
+          
+          rm -f mykeystore.jks unsigned.apk aligned.apk
 
       - name: 10. Xuất xưởng
         uses: softprops/action-gh-release@v2
