@@ -1,77 +1,118 @@
-name: Auto Mod TizenTubeCobalt (Build All Arch)
+name: Auto Mod TizenTube Cobalt
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *' # Chạy mỗi ngày lúc 00:00 UTC
+  workflow_dispatch:
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check_version.outputs.should_build }}
+      new_version: ${{ steps.check_version.outputs.new_version }}
+    steps:
+      - name: Check latest version
+        id: check_version
+        run: |
+          # Lấy version mới nhất từ repo gốc
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest | jq -r .tag_name)
+          
+          # Lấy version cuối cùng bạn đã release (cần có ít nhất 1 release)
+          CURRENT_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          
+          if [ "$LATEST_VERSION" == "$CURRENT_RELEASE" ]; then
+            echo "Đã là bản mới nhất ($LATEST_VERSION). Dừng workflow."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "Phát hiện phiên bản mới: $LATEST_VERSION"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "new_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [arm, arm64]
-    
+        include:
+          - abi: arm
+            source: cobalt-arm.apk
+            output: YouTube-TV-arm.apk
+          - abi: arm64
+            source: cobalt-arm64.apk
+            output: YouTube-TV-arm64.apk
+
     steps:
-      - name: 1. Lấy nguyên liệu
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt môi trường
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-      
-      - name: 3. Tải, Lấy Version và Mod APK (${{ matrix.arch }})
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Download Source APK
         run: |
-          wget -L -O cobalt.apk "https://github.com/reisxd/TizenTubeCobalt/releases/latest/download/cobalt-${{ matrix.arch }}.apk"
-          
-          # Lấy version chính xác từ file gốc
-          AAPT_PATH=$(find $ANDROID_HOME -name aapt | head -n 1)
-          VERSION_NAME=$($AAPT_PATH dump badging cobalt.apk | grep versionName | cut -d"'" -f2)
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
-          
-          wget -L -O apktool.jar "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar"
-          java -jar apktool.jar d cobalt.apk -o decompiled_app
-          
+          wget -L -O source.apk \
+          https://github.com/reisxd/TizenTubeCobalt/releases/download/${{ needs.check.outputs.new_version }}/${{ matrix.source }}
+
+      - name: Download Apktool
+        run: |
+          wget -L -O apktool.jar \
+          https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
+
+      - name: Decode APK
+        run: java -jar apktool.jar d source.apk -o decompiled_app
+
+      - name: Modify Package & Name
+        run: |
           sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
           sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
-          find decompiled_app/res/ -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/gi' {} \;
-          
-          find decompiled_app/res/values/ -name "public.xml" -delete
-          rm -rf decompiled_app/res/values-v*
-          
-          find decompiled_app/res/ -type f -iname "*launcher*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f -iname "*ic_app*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
-          find decompiled_app/res/ -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
-          
-          java -jar apktool.jar b decompiled_app -o unsigned.apk --force-all
-          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > mykeystore.jks
-          ZIPALIGN_PATH=$(find $ANDROID_HOME -name zipalign | head -n 1)
-          APKSIGNER_PATH=$(find $ANDROID_HOME -name apksigner | head -n 1)
-          $ZIPALIGN_PATH -p -f -v 4 unsigned.apk aligned.apk
-          $APKSIGNER_PATH sign --ks mykeystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass "pass:${{ secrets.KEY_STORE_PASSWORD }}" --key-pass "pass:${{ secrets.KEY_PASSWORD }}" --out YouTube-TV-${{ matrix.arch }}-$VERSION_NAME.apk aligned.apk
+          find decompiled_app -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/g' {} \; || true
+          grep -RIl "TizenTube" decompiled_app | while read f; do sed -i 's/TizenTube/YouTube/g' "$f" || true; done
 
-      - name: 4. Upload file đã build
+      - name: Replace Icons & Banner
+        run: |
+          find decompiled_app/res -type f -iname "*launcher*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
+          find decompiled_app/res -type f -iname "*ic_app*" ! -name "*.xml" -exec cp -f mod-assets/icon.png {} \;
+          find decompiled_app/res -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
+
+      - name: Rebuild
+        run: java -jar apktool.jar b decompiled_app -o unsigned.apk --force-all
+
+      - name: Zipalign & Sign
+        run: |
+          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > keystore.jks
+          ZIPALIGN=$(find $ANDROID_HOME -name zipalign | head -n 1)
+          APKSIGNER=$(find $ANDROID_HOME -name apksigner | head -n 1)
+          $ZIPALIGN -p -f -v 4 unsigned.apk aligned.apk
+          $APKSIGNER sign --ks keystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} --key-pass pass:${{ secrets.KEY_PASSWORD }} --out "${{ matrix.output }}" aligned.apk
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: YouTube-TV-${{ matrix.arch }}
-          path: YouTube-TV-${{ matrix.arch }}-*.apk
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}
 
   release:
-    needs: build
+    needs: [build, check]
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Tải các bản build về
-        uses: actions/download-artifact@v4
-      - name: Tạo Release gộp chung
-        uses: softprops/action-gh-release@v2
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v${{ github.run_number }}"
-          name: "YouTube TV Mod (Full Pack v${{ github.run_number }})"
+          tag_name: ${{ needs.check.outputs.new_version }}
+          name: YouTube TV Mod ${{ needs.check.outputs.new_version }}
           files: |
-            YouTube-TV-arm/YouTube-TV-arm-*.apk
-            YouTube-TV-arm64/YouTube-TV-arm64-*.apk
+            **/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
