@@ -91,7 +91,7 @@ jobs:
           find decompiled_app/res -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
 
       - name: Rebuild
-        run: java -jar apktool.jar b decompiled_app -o unsigned.apk --use-aapt2
+        run: java -jar apktool.jar b decompiled_app -o unsigned.apk -f
 
       - name: Zipalign & Sign
         run: |
