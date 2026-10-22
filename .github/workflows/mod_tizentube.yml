@@ -18,16 +18,14 @@ jobs:
       - name: Check latest version
         id: check_version
         run: |
-          # Lấy version mới nhất từ repo gốc (kèm GITHUB_TOKEN để không bị giới hạn API)
           LATEST_VERSION=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest | jq -r .tag_name)
           
-          if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" == "null" ]; then
+          if [ -z "$LATEST_VERSION" ] \vert{}\vert{} [ "$LATEST_VERSION" == "null" ]; then
             echo "Không lấy được version từ repo gốc!"
             exit 1
           fi
 
-          # Lấy version cuối cùng bạn đã release
           CURRENT_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
           
@@ -65,9 +63,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Download Source APK
         run: |
           curl -fL -o source.apk \
@@ -98,31 +93,5 @@ jobs:
       - name: Rebuild
         run: java -jar apktool.jar b decompiled_app -o unsigned.apk --use-aapt2
 
-      - name: Zipalign & Sign
-        run: |
-          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > keystore.jks
-          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name zipalign | sort -V | tail -n 1)
-          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
-          "$ZIPALIGN" -p -f -v 4 unsigned.apk aligned.apk
-          "$APKSIGNER" sign --ks keystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" --key-pass pass:"${{ secrets.KEY_PASSWORD }}" --out "${{ matrix.output }}" aligned.apk
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.output }}
-          path: ${{ matrix.output }}
-
-  release:
-    needs: [build, check]
-    if: needs.check.outputs.should_build == 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.check.outputs.new_version }}
-          name: YouTube TV Mod ${{ needs.check.outputs.new_version }}
-          files: |
-            **/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Zip
+      
