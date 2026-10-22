@@ -5,6 +5,9 @@ on:
     - cron: '0 0 * * *' # Chạy mỗi ngày lúc 00:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -15,10 +18,16 @@ jobs:
       - name: Check latest version
         id: check_version
         run: |
-          # Lấy version mới nhất từ repo gốc
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest | jq -r .tag_name)
+          # Lấy version mới nhất từ repo gốc (kèm GITHUB_TOKEN để không bị giới hạn API)
+          LATEST_VERSION=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/reisxd/TizenTubeCobalt/releases/latest | jq -r .tag_name)
           
-          # Lấy version cuối cùng bạn đã release (cần có ít nhất 1 release)
+          if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" == "null" ]; then
+            echo "Không lấy được version từ repo gốc!"
+            exit 1
+          fi
+
+          # Lấy version cuối cùng bạn đã release
           CURRENT_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
           
@@ -34,7 +43,7 @@ jobs:
   build:
     needs: check
     if: needs.check.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +60,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -61,13 +70,14 @@ jobs:
 
       - name: Download Source APK
         run: |
-          wget -L -O source.apk \
-          https://github.com/reisxd/TizenTubeCobalt/releases/download/${{ needs.check.outputs.new_version }}/${{ matrix.source }}
+          curl -fL -o source.apk \
+            "https://github.com/reisxd/TizenTubeCobalt/releases/download/${{ needs.check.outputs.new_version }}/${{ matrix.source }}"
 
       - name: Download Apktool
         run: |
-          wget -L -O apktool.jar \
-          https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
+          APKTOOL_URL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/iBotPeaches/Apktool/releases/latest | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -n 1)
+          curl -fL -o apktool.jar "$APKTOOL_URL"
 
       - name: Decode APK
         run: java -jar apktool.jar d source.apk -o decompiled_app
@@ -77,7 +87,7 @@ jobs:
           sed -i 's/package="[^"]*"/package="com.google.android.youtube.tv"/g' decompiled_app/AndroidManifest.xml
           sed -i 's/android:label="[^"]*"/android:label="YouTube"/g' decompiled_app/AndroidManifest.xml
           find decompiled_app -type f -name "*.xml" -exec sed -i 's/TizenTube/YouTube/g' {} \; || true
-          grep -RIl "TizenTube" decompiled_app | while read f; do sed -i 's/TizenTube/YouTube/g' "$f" || true; done
+          grep -RIl "TizenTube" decompiled_app | while read -r f; do sed -i 's/TizenTube/YouTube/g' "$f" || true; done
 
       - name: Replace Icons & Banner
         run: |
@@ -86,15 +96,15 @@ jobs:
           find decompiled_app/res -type f -iname "*banner*" ! -name "*.xml" -exec cp -f mod-assets/banner.png {} \;
 
       - name: Rebuild
-        run: java -jar apktool.jar b decompiled_app -o unsigned.apk --force-all
+        run: java -jar apktool.jar b decompiled_app -o unsigned.apk --use-aapt2
 
       - name: Zipalign & Sign
         run: |
           echo "${{ secrets.SIGNING_KEY }}" | base64 -d > keystore.jks
-          ZIPALIGN=$(find $ANDROID_HOME -name zipalign | head -n 1)
-          APKSIGNER=$(find $ANDROID_HOME -name apksigner | head -n 1)
-          $ZIPALIGN -p -f -v 4 unsigned.apk aligned.apk
-          $APKSIGNER sign --ks keystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} --key-pass pass:${{ secrets.KEY_PASSWORD }} --out "${{ matrix.output }}" aligned.apk
+          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name zipalign | sort -V | tail -n 1)
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          "$ZIPALIGN" -p -f -v 4 unsigned.apk aligned.apk
+          "$APKSIGNER" sign --ks keystore.jks --ks-key-alias "${{ secrets.ALIAS }}" --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" --key-pass pass:"${{ secrets.KEY_PASSWORD }}" --out "${{ matrix.output }}" aligned.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
